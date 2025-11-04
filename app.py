@@ -1,36 +1,14 @@
-import os
-
-# Robust model path resolution: find model relative to this file
-BASE_DIR = os.path.dirname(__file__)
-MODEL_RELATIVE = os.path.join(BASE_DIR, "model", "text_emotion.pkl")
-if not os.path.exists(MODEL_RELATIVE):
-    # try one level up (in case app.py is inside a subfolder)
-    MODEL_RELATIVE = os.path.join(BASE_DIR, "..", "model", "text_emotion.pkl")
-    MODEL_RELATIVE = os.path.normpath(MODEL_RELATIVE)
-
-if not os.path.exists(MODEL_RELATIVE):
-    # Provide a clear Streamlit error at runtime (prevents crash during import)
-    try:
-        import streamlit as st
-        st.error(f"Model file not found at: {MODEL_RELATIVE}. Please upload 'text_emotion.pkl' in the 'model' folder of the repo.")
-    except Exception:
-        pass
-    # fallback: do not raise here to avoid import-time crash; set pipe_lr to None
-    pipe_lr = None
-else:
-    )
-
+# app.py - corrected and ready for Streamlit
 import streamlit as st
-
 import pandas as pd
 import numpy as np
 import altair as alt
-
-
 import os
 import joblib
-import streamlit as st
 
+# ===============================
+# Load Model Safely
+# ===============================
 BASE_DIR = os.path.dirname(__file__)
 MODEL_PATH = os.path.join(BASE_DIR, "model", "text_emotion.pkl")
 
@@ -44,60 +22,107 @@ else:
     pipe_lr = None
     st.error("Model file not found at 'model/text_emotion.pkl'. Please upload it to the repository's model/ folder.")
 
-)
+# ===============================
+# Emoji dictionary
+# ===============================
+emotions_emoji_dict = {
+    "anger": "😠",
+    "disgust": "🤮",
+    "fear": "😨😱",
+    "happy": "🤗",
+    "joy": "😂",
+    "neutral": "😐",
+    "sad": "😔",
+    "sadness": "😔",
+    "shame": "😳",
+    "surprise": "😮",
+}
 
-emotions_emoji_dict = {"anger": "😠", "disgust": "🤮", "fear": "😨😱", "happy": "🤗", "joy": "😂", "neutral": "😐", "sad": "😔",
-                       "sadness": "😔", "shame": "😳", "surprise": "😮"}
-
-
+# ===============================
+# Prediction helpers
+# ===============================
 def predict_emotions(docx):
-    results = pipe_lr.predict([docx]) if pipe_lr is not None else ['Model_Not_Loaded'] if pipe_lr is not None else ['model_not_loaded']
-    return results[0]
-
+    if pipe_lr is not None:
+        return pipe_lr.predict([docx])[0]
+    return "Model_Not_Loaded"
 
 def get_prediction_proba(docx):
-    results = pipe_lr.predict_proba([docx]) if pipe_lr is not None else [[0.0]] if pipe_lr is not None else [[0.0]]
-    return results
+    if pipe_lr is not None:
+        return pipe_lr.predict_proba([docx])
+    return [[0.0]]
 
-
+# ===============================
+# Streamlit UI
+# ===============================
 def main():
-    st.title("Text Emotion Detection")
-    st.subheader("Detect Emotions In Text")
+    st.set_page_config(page_title="Text Emotion Detection", page_icon="💬")
+    st.title("💬 Text Emotion Detection")
+    st.write("Predict emotion from text using a trained model.")
 
-    with st.form(key='my_form'):
-        raw_text = st.text_area("Type Here")
-        submit_text = st.form_submit_button(label='Submit')
+    menu = ["Home", "Explore Dataset", "About"]
+    choice = st.sidebar.selectbox("Menu", menu)
 
-    if submit_text:
-        col1, col2 = st.columns(2)
+    if choice == "Home":
+        st.subheader("Enter Text to Analyze Emotion")
 
-        prediction = predict_emotions(raw_text)
-        probability = get_prediction_proba(raw_text)
+        with st.form(key='emotion_form'):
+            raw_text = st.text_area("Type here:")
+            submit_text = st.form_submit_button(label='Predict')
 
-        with col1:
-            st.success("Original Text")
-            st.write(raw_text)
+        if submit_text:
+            prediction = predict_emotions(raw_text)
+            probability = get_prediction_proba(raw_text)
 
-            st.success("Prediction")
-            emoji_icon = emotions_emoji_dict[prediction]
-            st.write("{}:{}".format(prediction, emoji_icon))
-            st.write("Confidence:{}".format(np.max(probability)))
+            col1, col2 = st.columns(2)
 
-        with col2:
-            st.success("Prediction Probability")
-            #st.write(probability)
-            proba_df = pd.DataFrame(probability, columns=pipe_lr.classes_)
-            #st.write(proba_df.T)
-            proba_df_clean = proba_df.T.reset_index()
-            proba_df_clean.columns = ["emotions", "probability"]
+            with col1:
+                st.success("Original Text")
+                st.write(raw_text)
 
-            fig = alt.Chart(proba_df_clean).mark_bar().encode(x='emotions', y='probability', color='emotions')
-            st.altair_chart(fig, use_container_width=True)
+                st.success("Prediction")
+                emoji_icon = emotions_emoji_dict.get(prediction, "")
+                st.write(f"{prediction} {emoji_icon}")
 
+                # show confidence if model loaded
+                try:
+                    conf = np.max(probability)
+                    st.write(f"Confidence: {conf:.2f}")
+                except Exception:
+                    st.write("Confidence: N/A")
 
+            with col2:
+                st.success("Prediction Probability")
+                if pipe_lr is not None:
+                    proba_df = pd.DataFrame(probability, columns=pipe_lr.classes_)
+                    proba_df_clean = proba_df.T.reset_index()
+                    proba_df_clean.columns = ["Emotions", "Probability"]
+                    chart = alt.Chart(proba_df_clean).mark_bar().encode(
+                        x="Emotions",
+                        y="Probability",
+                        color="Emotions"
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+                else:
+                    st.info("Model not loaded — probability not available.")
 
+    elif choice == "Explore Dataset":
+        st.subheader("Dataset Preview")
+        data_path = os.path.join(BASE_DIR, "data", "emotion_dataset_raw.csv")
+        if os.path.exists(data_path):
+            df = pd.read_csv(data_path)
+            st.write(df.head(10))
+            st.info(f"Dataset contains {df.shape[0]} rows and {df.shape[1]} columns.")
+        else:
+            st.error("Dataset not found! Please upload 'data/emotion_dataset_raw.csv'.")
 
-
+    else:
+        st.subheader("About")
+        st.write("""
+        **Text Emotion Detection App**
+        - Built with Streamlit
+        - Uses a trained NLP model to predict emotions from text
+        - Dataset: emotion_dataset_raw.csv (in data/ folder)
+        """)
 
 if __name__ == '__main__':
     main()
